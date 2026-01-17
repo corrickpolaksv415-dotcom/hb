@@ -563,19 +563,19 @@ export class LobbyComponent {
       alert('公告已更新');
   }
 
-  onCreate() {
+  async onCreate() {
     if (this.createForm.valid) {
       const { title, isPrivate } = this.createForm.value;
       const bg = this.selectedBg();
-      const id = this.dataService.createBoard(title!, isPrivate!, bg);
-      this.dataService.joinBoard(id);
+      const id = await this.dataService.createBoard(title!, isPrivate!, bg);
+      await this.dataService.joinBoard(id);
     }
   }
 
-  onJoin() {
+  async onJoin() {
     const code = this.joinCodeControl.value?.trim().toUpperCase();
     if (code) {
-      const success = this.dataService.joinBoard(code);
+      const success = await this.dataService.joinBoard(code);
       if (!success) {
         this.joinError.set('未找到该 ID 的画板');
       } else {

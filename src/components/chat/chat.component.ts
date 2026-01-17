@@ -354,9 +354,9 @@ export class ChatComponent {
     this.showBgSettings.set(false);
   }
 
-  createGroup() {
+  async createGroup() {
     if (this.newGroupName) {
-      const id = this.dataService.createGroup(this.newGroupName);
+      const id = await this.dataService.createGroup(this.newGroupName);
       this.newGroupName = '';
       this.enterGroup(id, this.newGroupName);
     }
