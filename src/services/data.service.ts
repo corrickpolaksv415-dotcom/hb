@@ -76,6 +76,10 @@ export class DataService {
   private readonly GROUPS_KEY = 'finals_groups_v2';
   private readonly POSTS_KEY = 'finals_posts_v2';
   
+  // Session Persistence Keys
+  private readonly SESSION_USER_KEY = 'finals_session_user_v2';
+  private readonly SESSION_BOARD_KEY = 'finals_session_board_v2';
+  
   // State
   currentUser = signal<string | null>(null);
   currentBoardId = signal<string | null>(null);
@@ -179,6 +183,7 @@ export class DataService {
       if (users[uid]) {
         if (users[uid] === password) {
           this.currentUser.set(uid);
+          localStorage.setItem(this.SESSION_USER_KEY, uid); // Persist Session
           this.updateHeartbeat();
           return true;
         } else {
@@ -188,6 +193,7 @@ export class DataService {
         users[uid] = password;
         localStorage.setItem(this.USERS_KEY, JSON.stringify(users));
         this.currentUser.set(uid);
+        localStorage.setItem(this.SESSION_USER_KEY, uid); // Persist Session
         this.loadUserIds();
         
         const profile: UserProfile = { 
@@ -215,6 +221,10 @@ export class DataService {
     this.currentBoardId.set(null);
     this.showUserCenter.set(false);
     this.showChat.set(false);
+    
+    // Clear Session Persistence
+    localStorage.removeItem(this.SESSION_USER_KEY);
+    localStorage.removeItem(this.SESSION_BOARD_KEY);
   }
 
   updateProfile(uid: string, avatarBase64: string) {
@@ -291,6 +301,7 @@ export class DataService {
     if (board) {
       this.currentBoardId.set(boardId);
       this.showUserCenter.set(false);
+      localStorage.setItem(this.SESSION_BOARD_KEY, boardId); // Persist Active Board
       return true;
     }
     return false;
@@ -298,11 +309,18 @@ export class DataService {
 
   leaveBoard() {
     this.currentBoardId.set(null);
+    localStorage.removeItem(this.SESSION_BOARD_KEY); // Clear Active Board
   }
 
   deleteBoard(boardId: string) {
     this.allBoards.update(prev => prev.filter(b => b.id !== boardId));
     this.allBlessings.update(prev => prev.filter(i => i.boardId !== boardId));
+    
+    // If deleted board was active, leave it
+    if (this.currentBoardId() === boardId) {
+        this.leaveBoard();
+    }
+    
     this.saveBoards();
     this.saveBlessings();
   }
@@ -541,6 +559,23 @@ export class DataService {
 
       const storedPosts = localStorage.getItem(this.POSTS_KEY);
       if (storedPosts) this.allPosts.set(JSON.parse(storedPosts));
+      
+      // --- RESTORE SESSION ---
+      const sessionUser = localStorage.getItem(this.SESSION_USER_KEY);
+      if (sessionUser) {
+          // Ideally verify user exists, but simple restoration is fine
+          this.currentUser.set(sessionUser);
+          this.updateHeartbeat();
+      }
+
+      const sessionBoard = localStorage.getItem(this.SESSION_BOARD_KEY);
+      if (sessionBoard) {
+          if (this.allBoards().some(b => b.id === sessionBoard)) {
+              this.currentBoardId.set(sessionBoard);
+          } else {
+              localStorage.removeItem(this.SESSION_BOARD_KEY);
+          }
+      }
 
     } catch (e) {
       console.error('Failed to load data', e);
