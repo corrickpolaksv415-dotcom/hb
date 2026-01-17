@@ -1,0 +1,34 @@
+@if (!isLoggedIn()) {
+  <app-login></app-login>
+} @else {
+  <!-- Main Layout -->
+  <div class="flex h-screen w-full flex-col md:flex-row bg-gray-50 overflow-hidden">
+    
+    @if (showUserCenter()) {
+        <!-- User Center View (Full Screen) -->
+        <div class="w-full h-full">
+            <app-user-center></app-user-center>
+        </div>
+    } @else {
+        @if (!currentBoardId()) {
+            <!-- Lobby View (Full Screen) -->
+            <div class="w-full h-full">
+                <app-lobby></app-lobby>
+            </div>
+        } @else {
+            <!-- Board View (Split Screen) -->
+            <main class="flex-1 flex flex-col h-[60vh] md:h-full p-2 md:p-4 gap-2 order-1 md:order-1 relative">
+                <div class="flex-1 overflow-hidden">
+                <app-board></app-board>
+                </div>
+            </main>
+
+            <!-- Side Feed Area -->
+            <aside class="w-full md:w-80 lg:w-96 bg-gray-50 border-t md:border-t-0 md:border-l border-gray-200 h-[40vh] md:h-full flex flex-col order-2 md:order-2 z-10 shadow-lg md:shadow-none">
+                <app-feed></app-feed>
+            </aside>
+        }
+    }
+    
+  </div>
+}

@@ -1,0 +1,5 @@
+{
+  "name": "期末祝福画板",
+  "description": "一个协作画板，用于分享期末考试的祝福。具有版本历史记录、跨标签自动更新和 AI 灵感功能。",
+  "requestFramePermissions": []
+}
