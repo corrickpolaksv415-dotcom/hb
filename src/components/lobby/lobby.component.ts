@@ -234,7 +234,8 @@ import { DataService } from '../../services/data.service';
                               <div class="flex items-center gap-2">
                                   <div class="font-bold text-gray-900">{{ post.title }}</div>
                                   <!-- Author Admin Tag -->
-                                  @if (getAdminTag(post.author); as tag) {
+                                  @let tag = getAdminTag(post.author);
+                                  @if (tag) {
                                       <span class="bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0.5 rounded border border-purple-200 font-bold">{{ tag }}</span>
                                   }
                               </div>
@@ -260,8 +261,9 @@ import { DataService } from '../../services/data.service';
                                         <div>
                                           <div class="flex items-center gap-1">
                                             <span class="font-bold text-gray-900">{{ comment.author }}:</span>
-                                            @if (getAdminTag(comment.author); as tag) {
-                                                <span class="bg-purple-50 text-purple-600 text-[9px] px-1 rounded border border-purple-100">{{ tag }}</span>
+                                            @let commentTag = getAdminTag(comment.author);
+                                            @if (commentTag) {
+                                                <span class="bg-purple-50 text-purple-600 text-[9px] px-1 rounded border border-purple-100">{{ commentTag }}</span>
                                             }
                                           </div>
                                           <span class="text-gray-700 break-all">{{ comment.content }}</span>

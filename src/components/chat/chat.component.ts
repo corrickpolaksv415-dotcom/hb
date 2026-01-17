@@ -87,10 +87,9 @@ import { DataService, ChatMessage } from '../../services/data.service';
                          <span class="text-sm font-medium text-gray-800">{{ group.name }}</span>
                       </div>
                       <!-- Unread Badge -->
-                      @if (getUnreadCount(undefined, group.id); as count) {
-                          @if (count > 0) {
-                              <span class="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{{ count > 99 ? '99+' : count }}</span>
-                          }
+                      @let count = getUnreadCount(undefined, group.id);
+                      @if (count > 0) {
+                          <span class="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{{ count > 99 ? '99+' : count }}</span>
                       }
                    </div>
                  }
@@ -140,10 +139,9 @@ import { DataService, ChatMessage } from '../../services/data.service';
                       </div>
                       
                       <!-- Unread Badge -->
-                      @if (getUnreadCount(uid); as count) {
-                          @if (count > 0) {
-                              <span class="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{{ count > 99 ? '99+' : count }}</span>
-                          }
+                      @let count = getUnreadCount(uid);
+                      @if (count > 0) {
+                          <span class="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{{ count > 99 ? '99+' : count }}</span>
                       }
                    </div>
                  }
