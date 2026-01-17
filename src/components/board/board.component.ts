@@ -1,4 +1,4 @@
-import { Component, ElementRef, ViewChild, AfterViewInit, inject, signal, effect, Injector } from '@angular/core';
+import { Component, ElementRef, ViewChild, AfterViewInit, OnDestroy, inject, signal, effect, Injector } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DataService } from '../../services/data.service';
@@ -33,7 +33,7 @@ interface BoardElement {
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="flex flex-col h-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative select-none">
+    <div class="flex flex-col h-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative select-none w-full">
       <!-- Top Bar -->
       <div class="flex items-center justify-between px-4 py-2 bg-gray-900 text-white flex-none">
         <div class="flex items-center gap-3">
@@ -215,7 +215,7 @@ interface BoardElement {
       </div>
 
       <!-- Canvas Area -->
-      <div class="relative flex-1 bg-white cursor-crosshair touch-none overflow-hidden group">
+      <div class="relative flex-1 bg-white cursor-crosshair touch-none overflow-hidden group w-full">
         <canvas #canvas 
           (mousedown)="startAction($event)" 
           (mousemove)="moveAction($event)" 
@@ -247,7 +247,7 @@ interface BoardElement {
     </div>
   `
 })
-export class BoardComponent implements AfterViewInit {
+export class BoardComponent implements AfterViewInit, OnDestroy {
   @ViewChild('canvas') canvasRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('textInput') textInputRef!: ElementRef<HTMLInputElement>;
   
@@ -279,6 +279,7 @@ export class BoardComponent implements AfterViewInit {
   // Layer 0: The "Background" (Pen strokes)
   private backgroundCanvas!: HTMLCanvasElement;
   private backgroundCtx!: CanvasRenderingContext2D;
+  private resizeObserver!: ResizeObserver;
 
   // Layer 1..N: Elements
   elements = signal<BoardElement[]>([]);
@@ -308,7 +309,16 @@ export class BoardComponent implements AfterViewInit {
 
   ngAfterViewInit() {
     this.initCanvas();
-    window.addEventListener('resize', () => this.resizeCanvas());
+    
+    // Robust Resizing
+    this.resizeObserver = new ResizeObserver(() => {
+        // Debounce slightly or just run
+        requestAnimationFrame(() => this.resizeCanvas());
+    });
+    
+    if (this.canvasRef.nativeElement.parentElement) {
+        this.resizeObserver.observe(this.canvasRef.nativeElement.parentElement);
+    }
     
     effect(() => {
         const blessings = this.dataService.currentBoardBlessings();
@@ -322,21 +332,30 @@ export class BoardComponent implements AfterViewInit {
                 const found = blessings.find(b => b.id === activeBoard.activeVersionId);
                 if (found) targetItem = found;
             }
-
-            this.loadBackground(targetItem.imageData);
+            
+            // Wait for next tick to ensure canvas might be resized
+            setTimeout(() => {
+                this.loadBackground(targetItem.imageData);
+            }, 100);
         }
     }, { injector: this.injector });
+  }
+
+  ngOnDestroy() {
+      if (this.resizeObserver) {
+          this.resizeObserver.disconnect();
+      }
   }
 
   // --- Initialization ---
 
   initCanvas() {
     const canvas = this.canvasRef.nativeElement;
-    this.ctx = canvas.getContext('2d')!;
+    this.ctx = canvas.getContext('2d', { willReadFrequently: true })!;
     
     // Create offscreen buffer for pen strokes
     this.backgroundCanvas = document.createElement('canvas');
-    this.backgroundCtx = this.backgroundCanvas.getContext('2d')!;
+    this.backgroundCtx = this.backgroundCanvas.getContext('2d', { willReadFrequently: true })!;
     
     this.resizeCanvas();
   }
@@ -345,25 +364,36 @@ export class BoardComponent implements AfterViewInit {
     const canvas = this.canvasRef.nativeElement;
     const parent = canvas.parentElement;
     if (parent) {
-      // 1. Save current background content
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = this.backgroundCanvas.width || 1;
-      tempCanvas.height = this.backgroundCanvas.height || 1;
-      tempCanvas.getContext('2d')?.drawImage(this.backgroundCanvas, 0, 0);
+      const w = parent.clientWidth;
+      const h = parent.clientHeight;
+      
+      if (w === 0 || h === 0) return; // Do not resize to 0
+
+      // 1. Save current background content if dimensions exist
+      let tempCanvas: HTMLCanvasElement | null = null;
+      if (this.backgroundCanvas.width > 0 && this.backgroundCanvas.height > 0) {
+          tempCanvas = document.createElement('canvas');
+          tempCanvas.width = this.backgroundCanvas.width;
+          tempCanvas.height = this.backgroundCanvas.height;
+          tempCanvas.getContext('2d')?.drawImage(this.backgroundCanvas, 0, 0);
+      }
 
       // 2. Resize Display Canvas
-      canvas.width = parent.clientWidth;
-      canvas.height = parent.clientHeight;
+      canvas.width = w;
+      canvas.height = h;
 
       // 3. Resize Background Canvas
-      this.backgroundCanvas.width = parent.clientWidth;
-      this.backgroundCanvas.height = parent.clientHeight;
+      this.backgroundCanvas.width = w;
+      this.backgroundCanvas.height = h;
 
       // 4. Restore background content
       this.backgroundCtx.lineCap = 'round';
       this.backgroundCtx.lineJoin = 'round';
       this.backgroundCtx.lineWidth = 3;
-      this.backgroundCtx.drawImage(tempCanvas, 0, 0);
+      
+      if (tempCanvas) {
+         this.backgroundCtx.drawImage(tempCanvas, 0, 0);
+      }
 
       this.render();
     }
@@ -386,6 +416,9 @@ export class BoardComponent implements AfterViewInit {
     const w = canvas.width;
     const h = canvas.height;
     
+    // Safety check
+    if (w === 0 || h === 0) return;
+
     // Get board background preference (default to white)
     const boardBg = this.boardInfo()?.backgroundColor || '#ffffff';
 
@@ -805,8 +838,14 @@ export class BoardComponent implements AfterViewInit {
       const img = new Image();
       img.onload = () => {
           this.clearCanvas();
-          this.backgroundCtx.drawImage(img, 0, 0, this.backgroundCanvas.width, this.backgroundCanvas.height);
-          this.render();
+          // Ensure we don't draw on 0x0
+          if (this.backgroundCanvas.width === 0 || this.backgroundCanvas.height === 0) {
+              this.resizeCanvas();
+          }
+          if (this.backgroundCanvas.width > 0 && this.backgroundCanvas.height > 0) {
+            this.backgroundCtx.drawImage(img, 0, 0, this.backgroundCanvas.width, this.backgroundCanvas.height);
+            this.render();
+          }
       };
       img.src = dataUrl;
   }

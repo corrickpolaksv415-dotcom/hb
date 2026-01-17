@@ -174,6 +174,19 @@ export class DataService {
     });
   }
 
+  // --- Helpers to safely save ---
+  private safeSave(key: string, data: any) {
+    try {
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (e: any) {
+      if (e.name === 'QuotaExceededError') {
+        alert('本地存储空间已满！保存失败。请尝试清除一些历史记录或使用无痕模式。此应用仅使用本地浏览器存储。');
+      } else {
+        console.error('Save failed', e);
+      }
+    }
+  }
+
   // --- Auth & User ---
   authenticate(uid: string, password: string, registerAsAdmin: boolean = false, adminTag: string = ''): boolean {
     try {
@@ -191,7 +204,7 @@ export class DataService {
         }
       } else {
         users[uid] = password;
-        localStorage.setItem(this.USERS_KEY, JSON.stringify(users));
+        this.safeSave(this.USERS_KEY, users);
         this.currentUser.set(uid);
         localStorage.setItem(this.SESSION_USER_KEY, uid); // Persist Session
         this.loadUserIds();
@@ -589,10 +602,10 @@ export class DataService {
       }
   }
 
-  private saveBlessings() { localStorage.setItem(this.BLESSINGS_KEY, JSON.stringify(this.allBlessings())); }
-  private saveBoards() { localStorage.setItem(this.BOARDS_KEY, JSON.stringify(this.allBoards())); }
-  private saveProfiles() { localStorage.setItem(this.PROFILES_KEY, JSON.stringify(this.allProfiles())); }
-  private saveMessages() { localStorage.setItem(this.MESSAGES_KEY, JSON.stringify(this.allMessages())); }
-  private saveGroups() { localStorage.setItem(this.GROUPS_KEY, JSON.stringify(this.allGroups())); }
-  private savePosts() { localStorage.setItem(this.POSTS_KEY, JSON.stringify(this.allPosts())); }
+  private saveBlessings() { this.safeSave(this.BLESSINGS_KEY, this.allBlessings()); }
+  private saveBoards() { this.safeSave(this.BOARDS_KEY, this.allBoards()); }
+  private saveProfiles() { this.safeSave(this.PROFILES_KEY, this.allProfiles()); }
+  private saveMessages() { this.safeSave(this.MESSAGES_KEY, this.allMessages()); }
+  private saveGroups() { this.safeSave(this.GROUPS_KEY, this.allGroups()); }
+  private savePosts() { this.safeSave(this.POSTS_KEY, this.allPosts()); }
 }
