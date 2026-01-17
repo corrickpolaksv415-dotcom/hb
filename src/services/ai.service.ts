@@ -19,6 +19,11 @@ export class AiService {
        console.warn('API_KEY extraction failed', e);
     }
     
+    // If no key is found, GoogleGenAI might throw on use, but not on init if we handle it carefully.
+    // However, the new SDK expects valid key in constructor. 
+    // We provide a dummy one if missing to allow app to start, but generation will fail.
+    if (!key) key = 'dummy_key_for_build';
+    
     this.ai = new GoogleGenAI({ apiKey: key });
   }
 

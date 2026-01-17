@@ -253,12 +253,23 @@ export class DataService {
 
   constructor() {
     // SUPABASE SETUP
-    const sbUrl = (typeof process !== 'undefined' && process.env['SUPABASE_URL']) || '';
-    const sbKey = (typeof process !== 'undefined' && process.env['SUPABASE_KEY']) || '';
+    let sbUrl = '';
+    let sbKey = '';
+
+    try {
+        if (typeof process !== 'undefined' && process.env) {
+            sbUrl = process.env['SUPABASE_URL'] || '';
+            sbKey = process.env['SUPABASE_KEY'] || '';
+        }
+    } catch (e) {
+        console.warn('Failed to read env vars', e);
+    }
     
     if (!sbUrl || !sbKey) {
-        console.error('Supabase Config Missing! Please set SUPABASE_URL and SUPABASE_KEY env variables.');
-        // Fallback or Alert logic could go here
+        console.warn('Supabase Config Missing! Please set SUPABASE_URL and SUPABASE_KEY env variables.');
+        // Fallback to prevent crash, though network requests will fail
+        sbUrl = 'https://placeholder.supabase.co';
+        sbKey = 'placeholder';
     }
 
     this.supabase = createClient(sbUrl, sbKey);
