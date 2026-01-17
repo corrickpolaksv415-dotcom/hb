@@ -22,6 +22,10 @@ import { DataService, ChatMessage } from '../../services/data.service';
                <span class="font-bold truncate max-w-[120px]">{{ chatTitle() }}</span>
              } @else {
                <span class="font-bold">消息中心</span>
+               @let total = dataService.totalUnreadCount();
+               @if (total > 0) {
+                 <span class="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold shadow-sm">{{ total > 99 ? '99+' : total }}</span>
+               }
              }
           </div>
           
@@ -231,16 +235,7 @@ import { DataService, ChatMessage } from '../../services/data.service';
         </div>
       </div>
     }
-  `,
-  styles: [`
-    @keyframes fade-in-down {
-      from { opacity: 0; transform: translateY(-10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    .animate-fade-in-down {
-      animation: fade-in-down 0.2s ease-out;
-    }
-  `]
+  `
 })
 export class ChatComponent {
   dataService = inject(DataService);
