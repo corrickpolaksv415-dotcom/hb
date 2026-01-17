@@ -32,6 +32,9 @@ interface BoardElement {
   selector: 'app-board',
   standalone: true,
   imports: [CommonModule, FormsModule],
+  host: {
+    class: 'block w-full h-full' 
+  },
   template: `
     <div class="flex flex-col h-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative select-none w-full">
       <!-- Top Bar -->
@@ -873,6 +876,8 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
   }
 
   loadBackground(dataUrl: string) {
+      if (!dataUrl) return; 
+
       const img = new Image();
       img.onload = () => {
           this.clearCanvas();
@@ -884,6 +889,9 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
             this.backgroundCtx.drawImage(img, 0, 0, this.backgroundCanvas.width, this.backgroundCanvas.height);
             this.render();
           }
+      };
+      img.onerror = (e) => {
+          console.error('Failed to load board background image', e);
       };
       img.src = dataUrl;
   }

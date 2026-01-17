@@ -9,8 +9,17 @@ export class AiService {
 
   constructor() {
     // Initialize Gemini Client
-    // process.env.API_KEY is guaranteed to be available in this environment
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    let key = '';
+    try {
+       // Safely check if process exists before accessing env
+       if (typeof process !== 'undefined' && process.env) {
+          key = process.env['API_KEY'] || '';
+       }
+    } catch (e) {
+       console.warn('API_KEY extraction failed', e);
+    }
+    
+    this.ai = new GoogleGenAI({ apiKey: key });
   }
 
   async generateBlessing(mood: string): Promise<string> {
