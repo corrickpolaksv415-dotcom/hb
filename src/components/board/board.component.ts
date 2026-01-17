@@ -1,4 +1,4 @@
-import { Component, ElementRef, ViewChild, AfterViewInit, OnDestroy, inject, signal, effect, Injector } from '@angular/core';
+import { Component, ElementRef, ViewChild, AfterViewInit, OnDestroy, inject, signal, effect, Injector, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DataService } from '../../services/data.service';
@@ -12,6 +12,7 @@ interface BoardElement {
   type: 'image' | 'text';
   x: number;
   y: number;
+  author: string; // New: Author tracking
   // Image specific
   image?: HTMLImageElement;
   width?: number;
@@ -49,6 +50,14 @@ interface BoardElement {
         </div>
         
         <div class="flex items-center gap-2">
+           <!-- Owner Tools: Show Authors -->
+           @if (isOwner()) {
+               <button (click)="toggleShowAuthors()" [class.bg-indigo-600]="showAuthors()" [class.bg-gray-700]="!showAuthors()" class="text-xs px-2 py-1.5 rounded transition-colors" title="显示修改者">
+                  显示作者
+               </button>
+               <div class="h-4 w-px bg-gray-600"></div>
+           }
+
            <!-- Download Button -->
            <button (click)="openDownloadModal()" class="bg-gray-700 hover:bg-gray-600 text-white p-1.5 rounded-full transition-colors" title="下载画板">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
@@ -292,6 +301,7 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
   injector = inject(Injector);
 
   boardInfo = this.dataService.activeBoard;
+  currentUser = this.dataService.currentUser;
   
   // -- State --
   tool = signal<Tool>('pen');
@@ -313,6 +323,9 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
   showDownloadModal = signal(false);
   includeUrl = signal(true);
   includeName = signal(true);
+
+  // Author Visibility State
+  showAuthors = signal(false);
 
   // -- Canvas System --
   private ctx!: CanvasRenderingContext2D; // Main display context
@@ -348,6 +361,11 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
     'font-round': 'ZCOOL KuaiLe'
   };
 
+  isOwner = computed(() => {
+      const board = this.boardInfo();
+      return board?.creator === this.currentUser();
+  });
+
   ngAfterViewInit() {
     this.initCanvas();
     
@@ -378,6 +396,9 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
             setTimeout(() => {
                 this.loadBackground(targetItem.imageData);
             }, 100);
+        } else {
+            // New board logic: clear elements
+             this.loadElementsFromStorage();
         }
     }, { injector: this.injector });
   }
@@ -450,6 +471,11 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
     this.selectedColor.set(input.value);
   }
 
+  toggleShowAuthors() {
+      this.showAuthors.update(v => !v);
+      this.render();
+  }
+
   // --- Rendering Loop ---
 
   render() {
@@ -498,11 +524,32 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
       }
       this.ctx.restore();
 
+      // Draw Author Label (If owner and enabled)
+      if (this.showAuthors() && this.isOwner()) {
+          this.drawAuthorLabel(el);
+      }
+
       // Draw Selection Box
       if (sel && sel.id === el.id) {
         this.drawSelectionBox(el);
       }
     }
+  }
+
+  drawAuthorLabel(el: BoardElement) {
+      this.ctx.save();
+      const text = el.author || '未知';
+      this.ctx.font = '10px sans-serif';
+      const m = this.ctx.measureText(text);
+      const bgW = m.width + 8;
+      const bgH = 16;
+      
+      this.ctx.fillStyle = '#6366f1'; // Indigo 500
+      this.ctx.fillRect(el.x, el.y - bgH - 2, bgW, bgH);
+      
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillText(text, el.x + 4, el.y - 6);
+      this.ctx.restore();
   }
 
   drawSelectionBox(el: BoardElement) {
@@ -666,6 +713,9 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
     this.isDrawing = false;
     this.isDragging = false;
     this.isResizing = false;
+    if (this.isDragging || this.isResizing) {
+        this.saveElementsToStorage();
+    }
   }
 
   // --- Helpers ---
@@ -750,10 +800,12 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
           y: (canvas.height - h) / 2,
           width: w,
           height: h,
-          image: img
+          image: img,
+          author: this.currentUser() || 'Unknown'
       };
 
       this.elements.update(prev => [...prev, el]);
+      this.saveElementsToStorage();
       this.selectElement(el);
       this.tool.set('select');
       this.render();
@@ -779,10 +831,12 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
             fontSize: size,
             fontStyleKey: styleKey,
             strokeColor: this.selectedStrokeColor(),
-            strokeWidth: this.selectedStrokeWidth()
+            strokeWidth: this.selectedStrokeWidth(),
+            author: this.currentUser() || 'Unknown'
         };
         
         this.elements.update(prev => [...prev, el]);
+        this.saveElementsToStorage();
         this.selectElement(el);
         this.tool.set('select');
     }
@@ -823,6 +877,7 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
           }
           return el;
       }));
+      this.saveElementsToStorage();
       this.render();
   }
 
@@ -837,6 +892,7 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
       const sel = this.selectedElement();
       if (!sel) return;
       this.elements.update(prev => prev.filter(e => e.id !== sel.id));
+      this.saveElementsToStorage();
       this.deselect();
   }
 
@@ -856,14 +912,89 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
           }
           return newArr;
       });
+      this.saveElementsToStorage();
       this.render();
   }
 
   // --- Saving & Loading ---
+  
+  private saveElementsToStorage() {
+      const boardId = this.boardInfo()?.id;
+      if (!boardId) return;
+      
+      // We can't save HTMLImageElements directly. Need to serialize.
+      // For images, we will assume they came from DataURLs in this session context, but actually
+      // persisting full image blobs to localstorage is heavy.
+      // Ideally we'd store the src string. 
+      // If the image src is a huge base64 string, localStorage will fill up fast.
+      // But for this requirement (persist authors), we must persist the objects.
+      
+      const serializableElements = this.elements().map(el => {
+         const { image, ...rest } = el; 
+         // For image elements, we need the src.
+         const serialized: any = { ...rest };
+         if (el.type === 'image' && el.image) {
+             serialized.imageSrc = el.image.src;
+         }
+         return serialized;
+      });
+      
+      try {
+          localStorage.setItem(`board_elements_${boardId}`, JSON.stringify(serializableElements));
+      } catch (e) {
+          console.warn('Storage full, elements not saved locally', e);
+      }
+  }
+  
+  private loadElementsFromStorage() {
+      const boardId = this.boardInfo()?.id;
+      if (!boardId) return;
+      
+      const stored = localStorage.getItem(`board_elements_${boardId}`);
+      if (stored) {
+          try {
+              const parsed: any[] = JSON.parse(stored);
+              const elements: BoardElement[] = [];
+              
+              let pendingImages = 0;
+              
+              parsed.forEach(p => {
+                  if (p.type === 'image' && p.imageSrc) {
+                      pendingImages++;
+                      const img = new Image();
+                      img.onload = () => {
+                          elements.push({
+                              ...p,
+                              image: img
+                          });
+                          pendingImages--;
+                          if (pendingImages === 0) {
+                              this.elements.set(elements);
+                              this.render();
+                          }
+                      };
+                      img.src = p.imageSrc;
+                  } else {
+                      elements.push(p);
+                  }
+              });
+              
+              if (pendingImages === 0) {
+                  this.elements.set(elements);
+                  // Render is called by effect mostly, but let's ensure
+                  setTimeout(() => this.render(), 100);
+              }
+              
+          } catch(e) {
+              console.error('Failed to load elements', e);
+          }
+      }
+  }
 
   clearCanvas() {
     this.backgroundCtx.clearRect(0, 0, this.backgroundCanvas.width, this.backgroundCanvas.height);
     this.elements.set([]);
+    this.saveElementsToStorage();
     this.deselect();
     this.render();
   }
@@ -988,10 +1119,12 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
           fontSize: size,
           fontStyleKey: styleKey,
           strokeColor: this.selectedStrokeColor(),
-          strokeWidth: this.selectedStrokeWidth()
+          strokeWidth: this.selectedStrokeWidth(),
+          author: this.currentUser() || 'AI'
       };
       
       this.elements.update(prev => [...prev, el]);
+      this.saveElementsToStorage();
       this.selectElement(el);
       this.tool.set('select');
       this.render();

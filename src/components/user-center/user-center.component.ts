@@ -20,11 +20,11 @@ import { DataService } from '../../services/data.service';
              
              <!-- Avatar Upload -->
              <div class="relative group cursor-pointer">
-                <div class="w-16 h-16 rounded-full overflow-hidden border-2 border-indigo-200 bg-white">
+                <div class="w-20 h-20 rounded-full overflow-hidden border-4 border-white shadow-md bg-white">
                    @if (myAvatar()) {
                       <img [src]="myAvatar()" class="w-full h-full object-cover">
                    } @else {
-                      <div class="w-full h-full flex items-center justify-center bg-indigo-50 text-indigo-300 font-bold text-2xl">
+                      <div class="w-full h-full flex items-center justify-center bg-indigo-50 text-indigo-300 font-bold text-3xl">
                         {{ dataService.currentUser()?.slice(0,1) }}
                       </div>
                    }
@@ -42,7 +42,21 @@ import { DataService } from '../../services/data.service';
                        <span class="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full border border-purple-200 font-bold">{{ tag }}</span>
                    }
                 </div>
-                <p class="text-gray-500 text-sm">个人中心</p>
+                
+                <!-- Social Stats -->
+                <div class="flex items-center gap-4 mt-2 text-sm text-gray-600">
+                    <div class="flex items-center gap-1">
+                        <span class="font-bold text-gray-900">{{ followersCount() }}</span> 粉丝
+                    </div>
+                    <div class="w-px h-3 bg-gray-300"></div>
+                    <div class="flex items-center gap-1">
+                        <span class="font-bold text-gray-900">{{ followingCount() }}</span> 关注
+                    </div>
+                    <div class="w-px h-3 bg-gray-300"></div>
+                    <div class="flex items-center gap-1">
+                        <span class="font-bold text-gray-900">{{ likesReceivedCount() }}</span> 获赞
+                    </div>
+                </div>
              </div>
           </div>
         </div>
@@ -105,6 +119,21 @@ export class UserCenterComponent {
   dataService = inject(DataService);
   myProfile = this.dataService.currentUserProfile;
   myAvatar = computed(() => this.myProfile()?.avatar);
+  
+  followersCount = computed(() => {
+      const uid = this.dataService.currentUser();
+      return uid ? this.dataService.getFollowerCount(uid) : 0;
+  });
+
+  followingCount = computed(() => {
+      const uid = this.dataService.currentUser();
+      return uid ? this.dataService.getFollowingCount(uid) : 0;
+  });
+
+  likesReceivedCount = computed(() => {
+      const uid = this.dataService.currentUser();
+      return uid ? this.dataService.getLikeCount(uid) : 0;
+  });
 
   goBack() {
     this.dataService.showUserCenter.set(false);

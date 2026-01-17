@@ -14,7 +14,11 @@ import { DataService } from '../../services/data.service';
         <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <div class="flex items-center gap-6">
             <h1 class="text-3xl font-bold text-gray-900">
-              @if (activeTab() === 'hall') { 画板大厅 } @else { 公共讨论区 }
+              @switch(activeTab()) {
+                  @case('hall') { 画板大厅 }
+                  @case('forum') { 公共讨论区 }
+                  @case('rank') { 排行榜 }
+              }
             </h1>
             
             <!-- Main Navigation Tabs -->
@@ -35,11 +39,65 @@ import { DataService } from '../../services/data.service';
                  [class.text-gray-500]="activeTab() !== 'forum'">
                  讨论
                </button>
+               <button 
+                 (click)="activeTab.set('rank')" 
+                 class="px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center gap-1"
+                 [class.bg-gray-100]="activeTab() === 'rank'"
+                 [class.text-indigo-600]="activeTab() === 'rank'"
+                 [class.text-gray-500]="activeTab() !== 'rank'">
+                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+                 排行
+               </button>
             </div>
           </div>
 
           <div class="flex flex-col items-end gap-2">
              <div class="flex items-center gap-3">
+                <!-- Notification Bell -->
+                <div class="relative">
+                    <button (click)="toggleNotifDropdown()" class="relative text-gray-600 hover:text-indigo-600 p-2 rounded-full transition-colors" title="通知">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                        @if (dataService.unreadNotificationCount() > 0) {
+                            <span class="absolute top-1 right-1 h-2.5 w-2.5 bg-red-500 rounded-full border-2 border-white"></span>
+                        }
+                    </button>
+                    <!-- Dropdown -->
+                    @if (showNotifDropdown()) {
+                        <div class="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-fade-in">
+                            <div class="p-3 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                                <span class="font-bold text-sm text-gray-700">消息通知</span>
+                                <button (click)="dataService.markAllNotificationsRead()" class="text-xs text-indigo-600 hover:underline">全部已读</button>
+                            </div>
+                            <div class="max-h-64 overflow-y-auto">
+                                @if (dataService.myNotifications().length === 0) {
+                                    <div class="p-4 text-center text-gray-400 text-xs">暂无新通知</div>
+                                }
+                                @for (n of dataService.myNotifications(); track n.id) {
+                                    <div class="p-3 border-b border-gray-50 hover:bg-gray-50 transition-colors relative" [class.bg-indigo-50]="!n.isRead" (click)="readNotification(n)">
+                                        <div class="flex items-start gap-2">
+                                            <div class="mt-1">
+                                                @if (n.type === 'like') { <span class="text-pink-500">❤️</span> }
+                                                @else if (n.type === 'follow') { <span class="text-blue-500">➕</span> }
+                                                @else if (n.type === 'comment') { <span class="text-green-500">💬</span> }
+                                                @else if (n.type === 'pin') { <span class="text-orange-500">📌</span> }
+                                                @else { <span>📢</span> }
+                                            </div>
+                                            <div class="flex-1">
+                                                <div class="text-xs font-bold text-gray-800 mb-0.5">{{ n.title }}</div>
+                                                <div class="text-xs text-gray-600 break-words">{{ n.content }}</div>
+                                                <div class="text-[10px] text-gray-400 mt-1">{{ n.timestamp | date:'MM/dd HH:mm' }}</div>
+                                            </div>
+                                            @if (!n.isRead) {
+                                                <div class="w-1.5 h-1.5 rounded-full bg-red-500 mt-2"></div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+
                 <!-- Chat Button -->
                 <button (click)="toggleChat()" class="relative bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-full transition-colors" title="聊天">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
@@ -62,6 +120,22 @@ import { DataService } from '../../services/data.service';
              </div>
           </div>
         </div>
+
+        <!-- Admin Panel: Announcement -->
+        @if (isAdmin()) {
+            <div class="mb-6 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-100 p-4 rounded-xl shadow-sm">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-sm font-bold text-purple-900 flex items-center gap-2">
+                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg>
+                         发布全站公告 (管理员)
+                    </h3>
+                    <button (click)="saveAnnouncement()" class="text-xs bg-purple-600 text-white px-3 py-1.5 rounded hover:bg-purple-700 font-bold transition-colors">
+                        发布 / 更新
+                    </button>
+                </div>
+                <textarea [(ngModel)]="announcementText" class="w-full text-sm p-3 border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 h-20 resize-none" placeholder="输入公告内容，用户登录时会弹出显示..."></textarea>
+            </div>
+        }
 
         <!-- CONTENT: Board Hall -->
         @if (activeTab() === 'hall') {
@@ -128,10 +202,18 @@ import { DataService } from '../../services/data.service';
             <!-- Right: Public Boards List -->
             <div class="lg:col-span-2">
               <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
-                <h2 class="text-lg font-bold flex items-center gap-2">
-                  <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg>
-                  公共画板大厅
-                </h2>
+                <div class="flex items-center gap-3">
+                    <h2 class="text-lg font-bold flex items-center gap-2">
+                    <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg>
+                    公共画板大厅
+                    </h2>
+                    <!-- Sorting -->
+                    <select [ngModel]="dataService.boardSortMethod()" (ngModelChange)="dataService.boardSortMethod.set($event)" class="text-sm border border-gray-200 rounded px-2 py-1 outline-none">
+                        <option value="hot">🔥 热度排序</option>
+                        <option value="new">🕒 最新创建</option>
+                    </select>
+                </div>
+
                 <!-- Board Search -->
                 <div class="relative w-full md:w-64">
                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -169,13 +251,33 @@ import { DataService } from '../../services/data.service';
                         <h3 class="font-bold text-gray-800 text-lg group-hover:text-indigo-600 transition-colors truncate">{{ board.title }}</h3>
                         </div>
                         <span class="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded font-mono">ID: {{ board.id }}</span>
+                        
+                        <!-- Creator Info with Avatar -->
                         <div class="flex items-center gap-2 text-sm text-gray-500 mt-2">
-                        <span class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold">{{ board.creator.slice(0,2) }}</span>
-                        <span>创建者: {{ board.creator }}</span>
+                            <div class="w-6 h-6 rounded-full overflow-hidden bg-gray-200 border border-gray-100 flex-shrink-0">
+                                @if (getAvatar(board.creator)) {
+                                    <img [src]="getAvatar(board.creator)" class="w-full h-full object-cover">
+                                } @else {
+                                    <div class="w-full h-full flex items-center justify-center text-[10px] font-bold text-gray-500">{{ board.creator.slice(0,1) }}</div>
+                                }
+                            </div>
+                            <span class="truncate">创建者: {{ board.creator }}</span>
                         </div>
-                        <div class="mt-4 flex justify-between items-center text-xs text-gray-400">
-                        <span>{{ board.createdAt | date:'shortDate' }}</span>
-                        <span class="text-indigo-500 font-medium group-hover:underline">点击进入 &rarr;</span>
+                        
+                        <div class="mt-4 flex justify-between items-end text-xs text-gray-400">
+                           <div class="flex items-center gap-3">
+                                <span>{{ board.createdAt | date:'shortDate' }}</span>
+                                <!-- Like Button -->
+                                <button (click)="toggleLike(board.id, 'board'); $event.stopPropagation()" 
+                                    class="flex items-center gap-1 transition-colors z-20"
+                                    [class.text-pink-500]="hasLiked(board.id)"
+                                    [class.text-gray-400]="!hasLiked(board.id)"
+                                    [class.hover:text-pink-600]="!hasLiked(board.id)">
+                                    <svg class="w-4 h-4" [class.fill-current]="hasLiked(board.id)" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
+                                    <span>{{ getLikeCount(board.id) }}</span>
+                                </button>
+                           </div>
+                           <span class="text-indigo-500 font-medium group-hover:underline">点击进入 &rarr;</span>
                         </div>
                     </div>
                   </div>
@@ -192,11 +294,18 @@ import { DataService } from '../../services/data.service';
           </div>
         }
 
-        <!-- CONTENT: Public Forum (Moved from UserCenter) -->
+        <!-- CONTENT: Public Forum -->
         @if (activeTab() === 'forum') {
           <div class="max-w-4xl mx-auto animate-fade-in">
-             <div class="flex gap-4 mb-6">
-                <input [(ngModel)]="postTitle" placeholder="帖子标题" class="flex-1 px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm">
+             <div class="flex flex-col md:flex-row gap-4 mb-6">
+                 <div class="flex-1 flex gap-2">
+                    <input [(ngModel)]="postTitle" placeholder="帖子标题" class="flex-1 px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm">
+                    <!-- Post Sorting -->
+                    <select [ngModel]="dataService.postSortMethod()" (ngModelChange)="dataService.postSortMethod.set($event)" class="text-sm border border-gray-200 rounded px-2 py-1 outline-none bg-white">
+                        <option value="hot">🔥 热度</option>
+                        <option value="new">🕒 最新</option>
+                    </select>
+                 </div>
                 <button (click)="createPost()" [disabled]="!postTitle.trim()" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-bold shadow-sm transition-transform active:scale-95">发布帖子</button>
             </div>
             
@@ -227,7 +336,7 @@ import { DataService } from '../../services/data.service';
                         }
 
                         <div class="flex items-center gap-3 mb-4">
-                           <div class="w-10 h-10 rounded-full overflow-hidden bg-gray-200 relative">
+                           <div class="w-10 h-10 rounded-full overflow-hidden bg-gray-200 relative flex-shrink-0">
                               @if (getAvatar(post.author)) { <img [src]="getAvatar(post.author)" class="w-full h-full object-cover"> } @else { <div class="w-full h-full flex items-center justify-center font-bold text-gray-500">{{post.author.slice(0,1)}}</div> }
                            </div>
                            <div>
@@ -245,6 +354,17 @@ import { DataService } from '../../services/data.service';
                         
                         <p class="text-gray-800 mb-6 whitespace-pre-wrap leading-relaxed">{{ post.content }}</p>
 
+                        <!-- Actions Bar -->
+                        <div class="flex items-center gap-4 mb-4 border-b border-gray-100 pb-2">
+                             <button (click)="toggleLike(post.id, 'post')" 
+                                    class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-gray-50 hover:bg-pink-50 transition-colors"
+                                    [class.text-pink-500]="hasLiked(post.id)"
+                                    [class.text-gray-500]="!hasLiked(post.id)">
+                                    <svg class="w-5 h-5" [class.fill-current]="hasLiked(post.id)" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
+                                    <span class="font-bold text-sm">{{ getLikeCount(post.id) }}</span>
+                            </button>
+                        </div>
+
                         <!-- Comments Section -->
                         <div class="bg-gray-50 rounded-xl p-4">
                            <h4 class="text-xs font-bold text-gray-500 mb-3 flex items-center gap-1">
@@ -255,8 +375,8 @@ import { DataService } from '../../services/data.service';
                              <div class="space-y-3 mb-4 max-h-60 overflow-y-auto pr-2">
                                 @for (comment of post.comments; track comment.id) {
                                     <div class="flex gap-2 items-start text-sm group">
-                                        <div class="w-6 h-6 rounded-full bg-indigo-100 flex-shrink-0 flex items-center justify-center text-[10px] text-indigo-700 font-bold mt-0.5">
-                                          {{ comment.author.slice(0,1) }}
+                                        <div class="w-6 h-6 rounded-full bg-indigo-100 flex-shrink-0 flex items-center justify-center text-[10px] text-indigo-700 font-bold mt-0.5 overflow-hidden">
+                                           @if (getAvatar(comment.author)) { <img [src]="getAvatar(comment.author)" class="w-full h-full object-cover"> } @else { {{ comment.author.slice(0,1) }} }
                                         </div>
                                         <div>
                                           <div class="flex items-center gap-1">
@@ -288,6 +408,87 @@ import { DataService } from '../../services/data.service';
             </div>
           </div>
         }
+
+        <!-- CONTENT: Leaderboard -->
+        @if (activeTab() === 'rank') {
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in">
+                <!-- Most Followed / Popular -->
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                    <h2 class="text-lg font-bold text-indigo-900 mb-6 flex items-center gap-2">
+                        <span class="text-2xl">👑</span> 人气榜 (粉丝数)
+                    </h2>
+                    <div class="space-y-4">
+                        @for (user of dataService.userRankings().byFollowers; track user.uid; let i = $index) {
+                            <div class="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 flex items-center justify-center font-bold text-lg" 
+                                        [class.text-yellow-500]="i===0" 
+                                        [class.text-gray-400]="i>0 && i<3" 
+                                        [class.text-gray-300]="i>=3">
+                                        {{ i + 1 }}
+                                    </div>
+                                    <div class="w-10 h-10 rounded-full overflow-hidden bg-white border border-gray-200">
+                                        @if (getAvatar(user.uid)) { <img [src]="getAvatar(user.uid)" class="w-full h-full object-cover"> } 
+                                        @else { <div class="w-full h-full flex items-center justify-center font-bold text-gray-400">{{ user.uid.slice(0,1) }}</div> }
+                                    </div>
+                                    <span class="font-bold text-gray-800">{{ user.uid }}</span>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <span class="text-sm font-medium text-gray-500">{{ user.followers }} 粉丝</span>
+                                    @if (user.uid !== dataService.currentUser()) {
+                                        <button (click)="toggleFollow(user.uid)" 
+                                            class="text-xs px-3 py-1 rounded-full border transition-colors font-bold"
+                                            [class.bg-indigo-600]="!isFollowing(user.uid)"
+                                            [class.text-white]="!isFollowing(user.uid)"
+                                            [class.bg-white]="isFollowing(user.uid)"
+                                            [class.text-gray-600]="isFollowing(user.uid)"
+                                            [class.border-gray-300]="isFollowing(user.uid)">
+                                            {{ isFollowing(user.uid) ? '已关注' : '+ 关注' }}
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <!-- Most Liked (Karma) -->
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                    <h2 class="text-lg font-bold text-pink-900 mb-6 flex items-center gap-2">
+                        <span class="text-2xl">💖</span> 获赞榜 (个人主页)
+                    </h2>
+                     <div class="space-y-4">
+                        @for (user of dataService.userRankings().byLikes; track user.uid; let i = $index) {
+                             <div class="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 flex items-center justify-center font-bold text-lg" 
+                                        [class.text-yellow-500]="i===0" 
+                                        [class.text-gray-400]="i>0 && i<3" 
+                                        [class.text-gray-300]="i>=3">
+                                        {{ i + 1 }}
+                                    </div>
+                                    <div class="w-10 h-10 rounded-full overflow-hidden bg-white border border-gray-200">
+                                        @if (getAvatar(user.uid)) { <img [src]="getAvatar(user.uid)" class="w-full h-full object-cover"> } 
+                                        @else { <div class="w-full h-full flex items-center justify-center font-bold text-gray-400">{{ user.uid.slice(0,1) }}</div> }
+                                    </div>
+                                    <span class="font-bold text-gray-800">{{ user.uid }}</span>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <span class="text-sm font-medium text-gray-500">{{ user.likesReceived }} 获赞</span>
+                                    @if (user.uid !== dataService.currentUser()) {
+                                         <button (click)="toggleLike(user.uid, 'user')" 
+                                            class="text-xs px-2 py-1 rounded-full bg-pink-50 text-pink-500 hover:bg-pink-100 transition-colors" title="给TA点赞 (每天一次)">
+                                            ❤️ 点赞
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                     </div>
+                </div>
+            </div>
+        }
+
       </div>
       
       <!-- Footer -->
@@ -312,7 +513,7 @@ export class LobbyComponent {
   unreadCount = this.dataService.totalUnreadCount;
 
   // Tabs
-  activeTab = signal<'hall' | 'forum'>('hall');
+  activeTab = signal<'hall' | 'forum' | 'rank'>('hall');
 
   // Create Board Form
   createForm = new FormGroup({
@@ -346,6 +547,21 @@ export class LobbyComponent {
   // Forum State
   postTitle = '';
   postContent = '';
+  
+  // Announcement
+  announcementText = '';
+
+  // Notifications
+  showNotifDropdown = signal(false);
+
+  constructor() {
+      this.announcementText = this.dataService.announcement();
+  }
+
+  saveAnnouncement() {
+      this.dataService.updateAnnouncement(this.announcementText);
+      alert('公告已更新');
+  }
 
   onCreate() {
     if (this.createForm.valid) {
@@ -419,5 +635,42 @@ export class LobbyComponent {
   addComment(postId: string, content: string) {
       if (!content.trim()) return;
       this.dataService.addComment(postId, content);
+  }
+
+  // --- SOCIAL METHODS ---
+  toggleLike(targetId: string, type: 'board' | 'post' | 'user') {
+      this.dataService.toggleLike(targetId, type);
+  }
+
+  hasLiked(targetId: string) {
+      return this.dataService.hasLiked(targetId);
+  }
+  
+  getLikeCount(targetId: string) {
+      return this.dataService.getLikeCount(targetId);
+  }
+
+  toggleFollow(uid: string) {
+      this.dataService.toggleFollow(uid);
+  }
+
+  isFollowing(uid: string) {
+      return this.dataService.isFollowing(uid);
+  }
+
+  toggleNotifDropdown() {
+      this.showNotifDropdown.update(v => !v);
+  }
+
+  readNotification(n: any) {
+      this.dataService.markNotificationRead(n.id);
+      if (n.linkTo) {
+          if (n.type === 'board_update' || n.type === 'pin') {
+             // If linkTo is board ID
+             this.dataService.joinBoard(n.linkTo);
+          }
+      }
+      // For general social notifs (follow/like), maybe go to user center? 
+      // Current simplified flow just marks read.
   }
 }

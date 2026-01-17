@@ -24,8 +24,8 @@ export interface UserProfile {
   avatar?: string;
   isAdmin?: boolean;
   adminTag?: string;
-  lastActive?: number; // New: For Online Status
-  chatBackground?: string; // New: Custom Chat Background (color hex or image url)
+  lastActive?: number; 
+  chatBackground?: string; 
 }
 
 export interface ChatMessage {
@@ -35,9 +35,9 @@ export interface ChatMessage {
   groupId?: string;
   content: string;
   timestamp: number;
-  type?: 'text' | 'image'; // New: Message Type
-  readBy?: string[]; // New: Array of UIDs who read the message
-  isRecalled?: boolean; // New: Recall status
+  type?: 'text' | 'image'; 
+  readBy?: string[]; 
+  isRecalled?: boolean; 
 }
 
 export interface ChatGroup {
@@ -64,6 +64,34 @@ export interface ForumComment {
   timestamp: number;
 }
 
+// --- NEW SOCIAL INTERFACES ---
+
+export interface LikeRecord {
+  id: string;
+  targetId: string; // BoardID, PostID, or UserID
+  targetType: 'board' | 'post' | 'user';
+  userId: string; // Who liked
+  timestamp: number;
+}
+
+export interface FollowRecord {
+  id: string;
+  followerId: string;
+  followingId: string;
+  timestamp: number;
+}
+
+export interface Notification {
+  id: string;
+  recipientId: string;
+  type: 'system' | 'like' | 'follow' | 'comment' | 'board_update' | 'pin';
+  title: string;
+  content: string;
+  linkTo?: string; // e.g., boardId or 'post:postId'
+  isRead: boolean;
+  timestamp: number;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -75,7 +103,13 @@ export class DataService {
   private readonly MESSAGES_KEY = 'finals_messages_v2';
   private readonly GROUPS_KEY = 'finals_groups_v2';
   private readonly POSTS_KEY = 'finals_posts_v2';
+  private readonly ANNOUNCEMENT_KEY = 'finals_announcement_v2';
   
+  // New Keys
+  private readonly LIKES_KEY = 'finals_likes_v2';
+  private readonly FOLLOWS_KEY = 'finals_follows_v2';
+  private readonly NOTIFICATIONS_KEY = 'finals_notifications_v2';
+
   // Session Persistence Keys
   private readonly SESSION_USER_KEY = 'finals_session_user_v2';
   private readonly SESSION_BOARD_KEY = 'finals_session_board_v2';
@@ -85,7 +119,12 @@ export class DataService {
   currentBoardId = signal<string | null>(null);
   showUserCenter = signal<boolean>(false);
   showChat = signal<boolean>(false);
+  announcement = signal<string>('');
   
+  // Sorting Preferences
+  boardSortMethod = signal<'new' | 'hot'>('hot');
+  postSortMethod = signal<'new' | 'hot'>('hot');
+
   // Data Signals
   private allBlessings = signal<BoardItem[]>([]);
   private allBoards = signal<Board[]>([]);
@@ -94,6 +133,11 @@ export class DataService {
   private allGroups = signal<ChatGroup[]>([]);
   private allPosts = signal<ForumPost[]>([]);
   private allUserIds = signal<string[]>([]);
+  
+  // New Data Signals
+  private allLikes = signal<LikeRecord[]>([]);
+  private allFollows = signal<FollowRecord[]>([]);
+  private allNotifications = signal<Notification[]>([]);
 
   // --- Computed ---
 
@@ -107,16 +151,24 @@ export class DataService {
       .sort((a, b) => b.timestamp - a.timestamp)
   );
 
-  publicBoards = computed(() => 
-    this.allBoards()
-      .filter(b => !b.isPrivate)
-      .sort((a, b) => {
-        if (!!a.isPinned !== !!b.isPinned) {
-          return a.isPinned ? -1 : 1;
-        }
+  publicBoards = computed(() => {
+    const method = this.boardSortMethod();
+    const boards = this.allBoards().filter(b => !b.isPrivate);
+    
+    return boards.sort((a, b) => {
+      // Pinned always on top
+      if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
+      
+      if (method === 'new') {
         return b.createdAt - a.createdAt;
-      })
-  );
+      } else {
+        // Hot score: Likes * 2 + Drawing Count
+        const scoreA = (this.getLikeCount(a.id) * 2) + this.getBoardItemCount(a.id);
+        const scoreB = (this.getLikeCount(b.id) * 2) + this.getBoardItemCount(b.id);
+        return scoreB - scoreA;
+      }
+    });
+  });
 
   myBoards = computed(() => 
     this.allBoards()
@@ -130,22 +182,58 @@ export class DataService {
 
   isAdmin = computed(() => !!this.currentUserProfile()?.isAdmin);
   
-  posts = computed(() => 
-    this.allPosts().sort((a, b) => {
-      if (a.isPinned === b.isPinned) {
+  posts = computed(() => {
+    const method = this.postSortMethod();
+    const posts = [...this.allPosts()];
+
+    return posts.sort((a, b) => {
+      if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
+
+      if (method === 'new') {
         return b.timestamp - a.timestamp;
+      } else {
+        // Hot score: Likes * 2 + Comments
+        const scoreA = (this.getLikeCount(a.id) * 2) + a.comments.length;
+        const scoreB = (this.getLikeCount(b.id) * 2) + b.comments.length;
+        return scoreB - scoreA;
       }
-      return a.isPinned ? -1 : 1;
-    })
+    });
+  });
+
+  // Notifications for current user
+  myNotifications = computed(() => {
+      const uid = this.currentUser();
+      if (!uid) return [];
+      return this.allNotifications()
+        .filter(n => n.recipientId === uid)
+        .sort((a, b) => b.timestamp - a.timestamp);
+  });
+  
+  unreadNotificationCount = computed(() => 
+      this.myNotifications().filter(n => !n.isRead).length
   );
 
-  // Unread Counts
+  // Leaderboards
+  userRankings = computed(() => {
+      // Compute score for each user
+      const stats = this.allUserIds().map(uid => {
+          const followers = this.allFollows().filter(f => f.followingId === uid).length;
+          const likesReceived = this.allLikes().filter(l => l.targetType === 'user' && l.targetId === uid).length;
+          // Calculate total likes on their boards/posts could be expensive, sticking to direct user likes for "Karma"
+          return { uid, followers, likesReceived };
+      });
+
+      return {
+          byFollowers: [...stats].sort((a, b) => b.followers - a.followers).slice(0, 10),
+          byLikes: [...stats].sort((a, b) => b.likesReceived - a.likesReceived).slice(0, 10)
+      };
+  });
+
+  // Unread Counts (Chat)
   totalUnreadCount = computed(() => {
     const uid = this.currentUser();
     if (!uid) return 0;
     return this.allMessages().filter(m => {
-      // Logic: I am the receiver OR it's a group I'm in (handled by getMessagesFor context usually, but here global)
-      // Simpler: If I am not the sender, and I haven't read it.
       const isMyMsg = m.sender === uid;
       if (isMyMsg) return false;
 
@@ -180,7 +268,7 @@ export class DataService {
       localStorage.setItem(key, JSON.stringify(data));
     } catch (e: any) {
       if (e.name === 'QuotaExceededError') {
-        alert('本地存储空间已满！保存失败。请尝试清除一些历史记录或使用无痕模式。此应用仅使用本地浏览器存储。');
+        alert('本地存储空间已满！保存失败。');
       } else {
         console.error('Save failed', e);
       }
@@ -220,6 +308,9 @@ export class DataService {
         
         this.allProfiles.update(prev => [...prev, profile]);
         this.saveProfiles();
+        
+        // System Welcome Notification
+        this.sendNotification(uid, 'system', '欢迎来到期末祝福画板！');
         
         return true;
       }
@@ -289,6 +380,171 @@ export class DataService {
     return this.allUserIds();
   }
 
+  // --- SOCIAL: Likes & Follows ---
+
+  getLikeCount(targetId: string): number {
+      return this.allLikes().filter(l => l.targetId === targetId).length;
+  }
+  
+  hasLiked(targetId: string): boolean {
+      const uid = this.currentUser();
+      if (!uid) return false;
+      const record = this.allLikes().find(l => l.targetId === targetId && l.userId === uid);
+      
+      if (!record) return false;
+
+      // For users, check 24h rule. For boards/posts, existence means liked.
+      if (record.targetType === 'user') {
+          return (Date.now() - record.timestamp) < 86400000; // 24 hours
+      }
+      return true;
+  }
+
+  toggleLike(targetId: string, type: 'board' | 'post' | 'user') {
+      const uid = this.currentUser();
+      if (!uid) return;
+
+      const existingIndex = this.allLikes().findIndex(l => l.targetId === targetId && l.userId === uid);
+      
+      if (type === 'user') {
+          // Special logic: User likes are daily
+          if (existingIndex > -1) {
+              const record = this.allLikes()[existingIndex];
+              if ((Date.now() - record.timestamp) < 86400000) {
+                  alert('每天只能给该用户点赞一次哦！');
+                  return;
+              }
+              // Update timestamp (re-like after 24h)
+              this.allLikes.update(likes => {
+                  const newLikes = [...likes];
+                  newLikes[existingIndex] = { ...record, timestamp: Date.now() };
+                  return newLikes;
+              });
+              this.sendNotification(targetId, 'like', `${uid} 给你的主页点赞了！`);
+          } else {
+              // New like
+               const newLike: LikeRecord = {
+                  id: crypto.randomUUID(),
+                  targetId,
+                  targetType: type,
+                  userId: uid,
+                  timestamp: Date.now()
+              };
+              this.allLikes.update(l => [...l, newLike]);
+              this.sendNotification(targetId, 'like', `${uid} 给你的主页点赞了！`);
+          }
+      } else {
+          // Board/Post toggle
+          if (existingIndex > -1) {
+              // Remove
+              this.allLikes.update(l => l.filter((_, i) => i !== existingIndex));
+          } else {
+              // Add
+              const newLike: LikeRecord = {
+                  id: crypto.randomUUID(),
+                  targetId,
+                  targetType: type,
+                  userId: uid,
+                  timestamp: Date.now()
+              };
+              this.allLikes.update(l => [...l, newLike]);
+              
+              // Notify owner
+              let ownerId = '';
+              let msg = '';
+              if (type === 'board') {
+                  const b = this.allBoards().find(x => x.id === targetId);
+                  if (b) { ownerId = b.creator; msg = `${uid} 点赞了你的画板: ${b.title}`; }
+              } else if (type === 'post') {
+                  const p = this.allPosts().find(x => x.id === targetId);
+                  if (p) { ownerId = p.author; msg = `${uid} 点赞了你的帖子: ${p.title}`; }
+              }
+              
+              if (ownerId && ownerId !== uid) {
+                  this.sendNotification(ownerId, 'like', msg, type === 'post' ? undefined : targetId);
+              }
+          }
+      }
+      this.saveLikes();
+  }
+
+  isFollowing(targetUid: string): boolean {
+      const uid = this.currentUser();
+      if (!uid) return false;
+      return this.allFollows().some(f => f.followerId === uid && f.followingId === targetUid);
+  }
+  
+  getFollowerCount(uid: string): number {
+      return this.allFollows().filter(f => f.followingId === uid).length;
+  }
+  
+  getFollowingCount(uid: string): number {
+      return this.allFollows().filter(f => f.followerId === uid).length;
+  }
+
+  toggleFollow(targetUid: string) {
+      const uid = this.currentUser();
+      if (!uid || uid === targetUid) return;
+
+      const existing = this.allFollows().find(f => f.followerId === uid && f.followingId === targetUid);
+      if (existing) {
+          // Unfollow
+          this.allFollows.update(arr => arr.filter(f => f.id !== existing.id));
+      } else {
+          // Follow
+          const newFollow: FollowRecord = {
+              id: crypto.randomUUID(),
+              followerId: uid,
+              followingId: targetUid,
+              timestamp: Date.now()
+          };
+          this.allFollows.update(arr => [...arr, newFollow]);
+          this.sendNotification(targetUid, 'follow', `${uid} 关注了你！`);
+      }
+      this.saveFollows();
+  }
+
+  // --- NOTIFICATIONS ---
+
+  sendNotification(recipientId: string, type: Notification['type'], content: string, linkTo?: string) {
+      const newNotif: Notification = {
+          id: crypto.randomUUID(),
+          recipientId,
+          type,
+          title: this.getNotifTitle(type),
+          content,
+          linkTo,
+          isRead: false,
+          timestamp: Date.now()
+      };
+      this.allNotifications.update(n => [newNotif, ...n]);
+      this.saveNotifications();
+  }
+  
+  private getNotifTitle(type: string): string {
+      switch(type) {
+          case 'like': return '收到点赞';
+          case 'follow': return '新增关注';
+          case 'comment': return '收到评论';
+          case 'board_update': return '画板更新';
+          case 'pin': return '置顶通知';
+          case 'system': return '系统通知';
+          default: return '通知';
+      }
+  }
+
+  markNotificationRead(id: string) {
+      this.allNotifications.update(ns => ns.map(n => n.id === id ? { ...n, isRead: true } : n));
+      this.saveNotifications();
+  }
+  
+  markAllNotificationsRead() {
+      const uid = this.currentUser();
+      if (!uid) return;
+      this.allNotifications.update(ns => ns.map(n => n.recipientId === uid ? { ...n, isRead: true } : n));
+      this.saveNotifications();
+  }
+
   // --- Boards ---
   createBoard(title: string, isPrivate: boolean, backgroundColor: string = '#ffffff'): string {
     const user = this.currentUser();
@@ -328,6 +584,8 @@ export class DataService {
   deleteBoard(boardId: string) {
     this.allBoards.update(prev => prev.filter(b => b.id !== boardId));
     this.allBlessings.update(prev => prev.filter(i => i.boardId !== boardId));
+    // Remove related likes
+    this.allLikes.update(l => l.filter(x => !(x.targetType === 'board' && x.targetId === boardId)));
     
     // If deleted board was active, leave it
     if (this.currentBoardId() === boardId) {
@@ -336,12 +594,17 @@ export class DataService {
     
     this.saveBoards();
     this.saveBlessings();
+    this.saveLikes();
   }
   
   togglePinBoard(boardId: string) {
       this.allBoards.update(boards => boards.map(b => {
           if (b.id === boardId) {
-              return { ...b, isPinned: !b.isPinned };
+              const newVal = !b.isPinned;
+              if (newVal) {
+                  this.sendNotification(b.creator, 'pin', `恭喜！你的画板 "${b.title}" 被管理员置顶了！`, b.id);
+              }
+              return { ...b, isPinned: newVal };
           }
           return b;
       }));
@@ -370,6 +633,22 @@ export class DataService {
 
     this.allBlessings.update(prev => [newItem, ...prev]);
     this.saveBlessings();
+
+    // Notify Board Creator if someone else draws
+    const board = this.allBoards().find(b => b.id === boardId);
+    if (board && board.creator !== user) {
+        this.sendNotification(board.creator, 'board_update', `${user} 在你的画板 "${board.title}" 上增加了新内容！`, boardId);
+    }
+  }
+  
+  private getBoardItemCount(boardId: string): number {
+      return this.allBlessings().filter(b => b.boardId === boardId).length;
+  }
+
+  // --- Announcement ---
+  updateAnnouncement(text: string) {
+      this.announcement.set(text);
+      localStorage.setItem(this.ANNOUNCEMENT_KEY, text);
   }
 
   // --- Chat ---
@@ -516,13 +795,20 @@ export class DataService {
 
   deletePost(postId: string) {
       this.allPosts.update(posts => posts.filter(p => p.id !== postId));
+      // Clean up likes
+      this.allLikes.update(l => l.filter(x => !(x.targetType === 'post' && x.targetId === postId)));
       this.savePosts();
+      this.saveLikes();
   }
 
   togglePinPost(postId: string) {
       this.allPosts.update(posts => posts.map(p => {
           if (p.id === postId) {
-              return { ...p, isPinned: !p.isPinned };
+              const newVal = !p.isPinned;
+              if (newVal) {
+                  this.sendNotification(p.author, 'pin', `你的帖子 "${p.title}" 被置顶了！`);
+              }
+              return { ...p, isPinned: newVal };
           }
           return p;
       }));
@@ -540,14 +826,24 @@ export class DataService {
       timestamp: Date.now()
     };
 
+    let postAuthor = '';
+
     this.allPosts.update(posts => posts.map(p => {
       if (p.id === postId) {
+        postAuthor = p.author;
         return { ...p, comments: [...p.comments, comment] };
       }
       return p;
     }));
+    
     this.savePosts();
     this.updateHeartbeat();
+
+    // Notify Post Author
+    if (postAuthor && postAuthor !== author) {
+        const postTitle = this.allPosts().find(p => p.id === postId)?.title || '帖子';
+        this.sendNotification(postAuthor, 'comment', `${author} 评论了你的帖子: ${postTitle}`);
+    }
   }
 
   // --- Storage ---
@@ -573,6 +869,18 @@ export class DataService {
       const storedPosts = localStorage.getItem(this.POSTS_KEY);
       if (storedPosts) this.allPosts.set(JSON.parse(storedPosts));
       
+      const storedAnnouncement = localStorage.getItem(this.ANNOUNCEMENT_KEY);
+      if (storedAnnouncement) this.announcement.set(storedAnnouncement);
+      
+      const storedLikes = localStorage.getItem(this.LIKES_KEY);
+      if (storedLikes) this.allLikes.set(JSON.parse(storedLikes));
+      
+      const storedFollows = localStorage.getItem(this.FOLLOWS_KEY);
+      if (storedFollows) this.allFollows.set(JSON.parse(storedFollows));
+      
+      const storedNotifs = localStorage.getItem(this.NOTIFICATIONS_KEY);
+      if (storedNotifs) this.allNotifications.set(JSON.parse(storedNotifs));
+
       // --- RESTORE SESSION ---
       const sessionUser = localStorage.getItem(this.SESSION_USER_KEY);
       if (sessionUser) {
@@ -608,4 +916,7 @@ export class DataService {
   private saveMessages() { this.safeSave(this.MESSAGES_KEY, this.allMessages()); }
   private saveGroups() { this.safeSave(this.GROUPS_KEY, this.allGroups()); }
   private savePosts() { this.safeSave(this.POSTS_KEY, this.allPosts()); }
+  private saveLikes() { this.safeSave(this.LIKES_KEY, this.allLikes()); }
+  private saveFollows() { this.safeSave(this.FOLLOWS_KEY, this.allFollows()); }
+  private saveNotifications() { this.safeSave(this.NOTIFICATIONS_KEY, this.allNotifications()); }
 }
