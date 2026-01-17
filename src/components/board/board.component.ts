@@ -46,7 +46,12 @@ interface BoardElement {
         </div>
         
         <div class="flex items-center gap-2">
-           <!-- Chat Button Added -->
+           <!-- Download Button -->
+           <button (click)="openDownloadModal()" class="bg-gray-700 hover:bg-gray-600 text-white p-1.5 rounded-full transition-colors" title="下载画板">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+           </button>
+
+           <!-- Chat Button -->
            <button (click)="toggleChat()" class="bg-indigo-600 hover:bg-indigo-500 p-1.5 rounded-full transition-colors" title="聊天">
              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
            </button>
@@ -61,6 +66,34 @@ interface BoardElement {
           </button>
         </div>
       </div>
+
+      <!-- Download Modal -->
+      @if (showDownloadModal()) {
+        <div class="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+            <div class="bg-white rounded-xl shadow-2xl p-6 w-80">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">下载图片</h3>
+                
+                <div class="space-y-3 mb-6">
+                    <label class="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-50 border border-transparent hover:border-gray-200">
+                        <input type="checkbox" [ngModel]="includeUrl()" (ngModelChange)="includeUrl.set($event)" class="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500">
+                        <span class="text-sm text-gray-700">添加网址水印</span>
+                    </label>
+                    
+                    <label class="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-50 border border-transparent hover:border-gray-200">
+                        <input type="checkbox" [ngModel]="includeName()" (ngModelChange)="includeName.set($event)" class="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500">
+                        <span class="text-sm text-gray-700">添加画板名称 & 作者</span>
+                    </label>
+                </div>
+
+                <div class="flex gap-3">
+                    <button (click)="showDownloadModal.set(false)" class="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors">取消</button>
+                    <button (click)="confirmDownload()" class="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
+                        下载
+                    </button>
+                </div>
+            </div>
+        </div>
+      }
 
       <!-- Toolbar -->
       <div class="flex items-center gap-2 p-2 border-b border-gray-200 bg-gray-50 flex-none overflow-x-auto relative min-h-[52px]">
@@ -272,6 +305,11 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
   selectedStrokeWidth = signal(2);
 
   isGenerating = signal(false);
+
+  // Download State
+  showDownloadModal = signal(false);
+  includeUrl = signal(true);
+  includeName = signal(true);
 
   // -- Canvas System --
   private ctx!: CanvasRenderingContext2D; // Main display context
@@ -852,6 +890,67 @@ export class BoardComponent implements AfterViewInit, OnDestroy {
 
   toggleChat() {
     this.dataService.showChat.update(v => !v);
+  }
+
+  // --- Download & Watermark ---
+
+  openDownloadModal() {
+      this.showDownloadModal.set(true);
+  }
+
+  confirmDownload() {
+      const originalCanvas = this.canvasRef.nativeElement;
+      const width = originalCanvas.width;
+      const height = originalCanvas.height;
+
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = width;
+      tempCanvas.height = height;
+      const ctx = tempCanvas.getContext('2d')!;
+
+      // Draw original
+      ctx.drawImage(originalCanvas, 0, 0);
+
+      // Add Watermarks
+      if (this.includeUrl() || this.includeName()) {
+          ctx.save();
+          // Scale font size based on canvas width
+          const fontSize = Math.max(16, width / 40); 
+          ctx.font = `bold ${fontSize}px "Noto Sans SC", sans-serif`;
+          ctx.fillStyle = 'rgba(100, 100, 100, 0.8)'; // Semi-transparent grey
+          // Add a white stroke for visibility on dark backgrounds
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.lineWidth = 3;
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'bottom';
+
+          let textY = height - 15;
+          const textX = width - 15;
+
+          if (this.includeUrl()) {
+             const url = 'https://drawingboard-pearl.vercel.app/';
+             ctx.strokeText(url, textX, textY);
+             ctx.fillText(url, textX, textY);
+             textY -= (fontSize + 8);
+          }
+
+          if (this.includeName()) {
+             const title = this.boardInfo()?.title || '未命名画板';
+             const author = this.boardInfo()?.creator || '匿名';
+             const text = `${title} @${author}`;
+             ctx.strokeText(text, textX, textY);
+             ctx.fillText(text, textX, textY);
+          }
+          ctx.restore();
+      }
+
+      // Download
+      const link = document.createElement('a');
+      link.download = `board-${Date.now()}.png`;
+      link.href = tempCanvas.toDataURL('image/png');
+      link.click();
+      
+      this.showDownloadModal.set(false);
   }
 
   // --- AI ---
