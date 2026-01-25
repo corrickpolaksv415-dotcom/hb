@@ -20,7 +20,8 @@
     "@angular/build": "^21.1.0",
     "@angular/cli": "^21.1.0",
     "@angular/compiler-cli": "^21.1.0",
-    "tailwindcss": "latest"
+    "tailwindcss": "latest",
+    "@vercel/analytics": "^1.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
